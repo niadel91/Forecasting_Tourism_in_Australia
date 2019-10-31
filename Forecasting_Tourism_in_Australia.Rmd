@@ -1,0 +1,317 @@
+---
+title: "Forecasting # of Tourists in Australia"
+author: "Niharika Sharma"
+date: "October 2, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r loadpackages, warning=FALSE}
+pacman::p_load(e1071, tidyverse, caret, rmarkdown,
+               corrplot, readxl, ModelMetrics, fpp2,expsmooth,CombMSC)
+theme_set(theme_classic())
+```
+
+```{r definedata}
+
+data(visitors)
+view(visitors)
+
+
+```
+
+
+__Time Plots:__
+```{r timeplots}
+
+
+### Monthly Australian short-term overseas vistors. May 1985-April 2005
+
+### Time Plot
+autoplot(visitors) +
+  ggtitle("Australian short-term overseas vistors") +
+  xlab("Year") + ylab("# of Visitors(Thousands)") 
+
+
+```
+ANALYSIS:
+The time Series plot displays:
+
+1. Trend - An increasing trend exists over the years 1985 to 2005
+2. Seasonality - There seems to be a seasonality in the data as the plot displays a pattern
+3. Variance - The seasonal pattern increases in size as the level of the series increases
+
+
+
+
+__Season Plots:__
+```{r seasonplots}
+ggseasonplot(visitors, year.labels = TRUE) +
+  ylab("# of Visitors(Thousands)") +
+  ggtitle("Monthly Australian short-term overseas vistors")
+
+### Polar seasonal plot
+ggseasonplot(visitors, polar=TRUE) +
+  ylab("# of Visitors(Thousands)") +
+  ggtitle("Monthly Australian short-term overseas vistors")
+```
+
+
+
+
+__ANALYSIS :__
+
+By looking at the Seasonal Plot and Polar Seasonal Plot,
+we can infer that the data has a seasonality. 
+
+1. The number of visitors increases for the month of July and December every year and keeps increasing till the end of the December.
+2. The number of visitors decreases for the month of May and September every year
+3. From the month May to December, almost all the years show the same pattern 
+
+ 
+
+__Subseries Plot (y vs. year, by month):__ Blue Line gives the mean in this
+```{r subseriesplot}
+ggsubseriesplot(visitors) +
+  ylab("# of Visitors(Thousands)") +
+  ggtitle("Monthly Australian short-term overseas vistors")
+```
+
+
+
+
+
+__ANALYSIS :__
+
+The mean for the number of visitors over the years for the month of December remains highest in comaprison to other states, followed by February, which has the second highest number of visitors over the years 1985-2005.
+The mean for the number of visitors for the month of May is the least.
+
+This might be due to weather conditions in Australia as its Summer in December and Winter in May.
+
+
+
+__Auto Correlation Plot__:
+```{r ACF}
+# Lag Plot
+gglagplot(visitors)
+
+# ACF or Correlogram
+ggAcf(visitors)
+
+
+autoplot(visitors) + xlab("Year") + ylab("# of Visitors(Thousands)")
+ggAcf(visitors, lag= 48)
+```
+
+
+
+
+__ANALYSIS :__
+
+Lag Plot : 
+
+There is a positive correlation for all the lags indicating a strong seasonality in the data
+
+Correlogram :
+
+1. The dashed blue lines indicate whether the correlations are significantly different from zero.All of the autocorrelation coefficients lie beyond these limits, confirming that the data are not white noise.
+
+2. The slow decrease in the ACF as the lags increase is due to the trend, while the “scalloped” shape is due to the seasonality.
+
+
+
+
+__Test Train Split__
+```{r traintestsplit}
+?visitors
+	
+visitors_split <- splitTrainTest(visitors, numTrain = length(visitors) - 24)
+
+visitors_split$train
+visitors_split$test
+
+```
+
+
+
+
+
+
+__Holt Winters Multiplicative Method__
+```{r Holt_Winters_multiplicative}
+
+fit1 <- hw(visitors_split$train,seasonal="additive")
+fit2 <- hw(visitors_split$train,seasonal="multiplicative")
+
+fit1[["model"]]
+fit2[["model"]]
+
+autoplot(visitors) +
+  autolayer(fit1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(fit2, series="HW multiplicative forecasts",
+    PI=FALSE) +
+  xlab("Year") +
+  ylab("Monthly Visitors") +
+  ggtitle("Monthly Australian overseas vistors") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+
+
+__Holt-Winters' additive method__ 
+
+  Smoothing parameters:
+    alpha = 0.4095 
+    beta  = 1e-04 
+    gamma = 0.3117 
+    
+     AIC     AICc      BIC 
+2422.918 2426.008 2480.297 
+
+
+__Holt-Winters' multiplicative method__ 
+
+  Smoothing parameters:
+    alpha = 0.4379 
+    beta  = 0.0164 
+    gamma = 1e-04
+    
+     AIC     AICc      BIC 
+2326.608 2329.699 2383.988
+
+We can see that the AIC, AICc and BIC are lower for multiplicative model so theoretically, Multiplicative model is better.
+
+But visually, we see that the Seasonality doesn't remain constant and keeps on increasing so Multiplicative Seasonality is necessary here.
+    
+    
+    
+    
+    
+    
+__ETS__
+```{r ETS}
+
+
+fit <- ets(visitors_split$train) # using to generate a forecast but with prediction intervals
+summary(fit)
+
+autoplot(fit)
+
+cbind('Residuals' = residuals(fit), 'Forecast errors' = residuals(fit,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+
+### Forecasts with ETS Models
+
+fit %>% forecast(h=24) %>%
+  autoplot() + ylab("Monthly Australian overseas vistors") 
+```
+
+
+
+
+
+__Additive ETS with Box-Cox Transformed Series__
+```{r ETS_Additive_boxCox}
+
+lambda <- BoxCox.lambda(visitors)
+
+fit2 <- ets(visitors_split$train,additive.only=TRUE,lambda=lambda) # using to generate a forecast but with prediction intervals
+summary(fit2)
+
+autoplot(fit2)
+
+cbind('Residuals' = residuals(fit2), 'Forecast errors' = residuals(fit2,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+
+### Forecasts with ETS Models
+
+fit2_forecast <- fit2 %>% forecast(h=24) %>%
+  autoplot() + ylab("Monthly Australian overseas vistors") 
+```
+
+
+
+__Seasonal Naive__
+
+```{r Seasonal_Naive}
+
+seasonal_naive <- snaive(visitors_split$train, h=24)
+summary(seasonal_naive)
+
+autoplot(visitors) +
+  autolayer(seasonal_naive,
+            series="Seasonal naive", PI=FALSE) +
+  ggtitle("Forecasts for Monthly Australian overseas vistors") +
+  xlab("Year") + ylab("# of Visitors(Thousands") +
+  guides(color=guide_legend(title="Forecast"))
+
+```
+
+
+__Which Method is best of - ETS, Additive ETS with Box-Cox Transformation and Seasonal Naive__
+```{r Best_Model}
+
+### Forecast accuracy (using Test data)
+accuracy(forecast(fit,h=24), visitors_split$test)
+accuracy(forecast(fit2,h=24), visitors_split$test)
+accuracy(forecast(seasonal_naive,h=24), visitors_split$test)
+
+
+```
+
+
+
+
+
+
+
+Analysis :
+
+As the RMSE for the Test is least for Seasonal Naive is the lowest so, in theory, the Seasonal Naive is the best Model.
+
+
+
+
+__Residual Test__
+```{r Residual_Test}
+
+#Finding Residuals
+
+checkresiduals(fit)
+checkresiduals(fit2)
+checkresiduals(seasonal_naive)
+# The resduals for each model are following a normal distribution.
+
+
+```
+
+
+
+
+
+
+
+Analysis:
+
+ETS and Additive ETS with Box-Cox Transformation Residual plots show that there is White Noise as they mostly follow Normal Distribution and the ACF doesn't show Autocorrelation.
+
+Seasonal Naive - 
+After plotting the Residuals, we can see that the distribution doesn't look like a Normal Distribution.
+Neither are 95% or more fall under the blue margins(95% confidence interval) in the ACF so there is no White Noise and it fails the Residual Test.
+
+
+
+__END__
+
